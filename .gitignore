@@ -1,0 +1,58 @@
+# Developer guides - local reference only
+DEVELOPER_GUIDES_OFFICIAL_DOCS/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Secrets (never commit)
+*.pem
+*.key
+private_key*
+credentials.json
+.env.local
+.env.*.local
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db

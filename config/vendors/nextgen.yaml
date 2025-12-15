@@ -1,0 +1,40 @@
+# NextGen Healthcare Vendor Configuration
+# Reference: https://developer.nextgen.com/
+
+vendor_id: nextgen
+vendor_name: NextGen Healthcare
+
+# Authentication
+auth:
+  type: smart_backend
+  token_endpoint_suffix: /oauth2/token
+
+# Bulk FHIR API
+bulk:
+  base_url: https://fhir.meditouchehr.com/api/bulkfhir/r4
+  max_group_size: 1000
+  max_groups_per_practice: 1000
+  supported_types:
+    - Patient
+    - AllergyIntolerance
+    - CarePlan
+    - Condition
+    - DiagnosticReport
+    - DocumentReference
+    - MedicationRequest
+    - Observation
+
+# Quirks and vendor-specific behaviors
+quirks:
+  date_format: YYYY-MM-DD
+  pagination_style: next_link
+  bulk_status_header: X-Progress
+  patient_search_endpoint: $patient-search
+  document_binary_inline: false
+  search_count_max: 1000
+
+# Additional metadata
+metadata:
+  supports_uscdi_v1: true
+  non_ehi_routes_available: false
+  swagger_url: https://petstore.swagger.io/?url=https://hfstatic.s3.amazonaws.com/swagger/Bulk-API-R4-Swagger.yml

@@ -1,0 +1,42 @@
+# FHIR R4 MCP Server Docker Compose Configuration
+# Isolated project configuration to run alongside other Docker projects
+
+name: fhir-r4-mcp  # Explicit project name for isolation
+
+services:
+  fhir-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fhir-r4-mcp-server
+    ports:
+      - "8013:8013"  # Unique port to avoid conflicts
+    networks:
+      - fhir-mcp-network
+    environment:
+      - FHIR_LOG_LEVEL=${FHIR_LOG_LEVEL:-INFO}
+      # Add secrets via environment variables or mount
+      # - FHIR_NEXTGEN_CLIENT_ID=${FHIR_NEXTGEN_CLIENT_ID}
+      # - FHIR_NEXTGEN_PRIVATE_KEY_PATH=/app/secrets/private_key.pem
+    volumes:
+      # Mount secrets directory (optional)
+      # - ./secrets:/app/secrets:ro
+      # Mount config directory
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import fhir_r4_mcp; print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  fhir-mcp-network:
+    name: fhir-r4-mcp-network
+    driver: bridge
+
+# Volume for persistent data (if needed in future)
+# volumes:
+#   fhir-mcp-data:
+#     name: fhir-r4-mcp-data
