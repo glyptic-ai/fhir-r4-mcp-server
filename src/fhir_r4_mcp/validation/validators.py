@@ -100,6 +100,45 @@ REQUIRED_FIELDS: dict[str, list[tuple[str, str, bool]]] = {
         ("type", "Group.type is required", False),
         ("actual", "Group.actual is required", False),
     ],
+    "Coverage": [
+        ("status", "Coverage.status is required", False),
+        ("beneficiary", "Coverage.beneficiary is required", False),
+        ("payor", "Coverage.payor is required", False),
+    ],
+    "RelatedPerson": [
+        ("patient", "RelatedPerson.patient is required", False),
+    ],
+    "Appointment": [
+        ("status", "Appointment.status is required", False),
+        ("participant", "Appointment.participant is required", False),
+    ],
+    "Schedule": [
+        ("actor", "Schedule.actor is required", False),
+    ],
+    "Slot": [
+        ("status", "Slot.status is required", False),
+        ("schedule", "Slot.schedule is required", False),
+        ("start", "Slot.start is required", False),
+        ("end", "Slot.end is required", False),
+    ],
+    "Consent": [
+        ("status", "Consent.status is required", False),
+        ("scope", "Consent.scope is required", False),
+        ("category", "Consent.category is required", False),
+    ],
+    "QuestionnaireResponse": [
+        ("status", "QuestionnaireResponse.status is required", False),
+    ],
+    "FamilyMemberHistory": [
+        ("status", "FamilyMemberHistory.status is required", False),
+        ("patient", "FamilyMemberHistory.patient is required", False),
+        ("relationship", "FamilyMemberHistory.relationship is required", False),
+    ],
+    "Subscription": [
+        ("status", "Subscription.status is required", False),
+        ("criteria", "Subscription.criteria is required", False),
+        ("channel", "Subscription.channel is required", False),
+    ],
 }
 
 # Choice type field variants
@@ -250,6 +289,13 @@ class FHIRValidator:
             "Procedure": ("status", "procedure-status"),
             "ServiceRequest": ("status", "servicerequest-status"),
             "CarePlan": ("status", "careplan-status"),
+            "Coverage": ("status", "coverage-status"),
+            "Appointment": ("status", "appointment-status"),
+            "Slot": ("status", "slot-status"),
+            "Consent": ("status", "consent-state"),
+            "QuestionnaireResponse": ("status", "questionnaire-answers-status"),
+            "FamilyMemberHistory": ("status", "history-status"),
+            "Subscription": ("status", "subscription-status"),
         }
 
         # Validate status field if applicable

@@ -25,13 +25,17 @@ class ResourceType(str, Enum):
     """Supported FHIR R4 resource types."""
 
     ALLERGY_INTOLERANCE = "AllergyIntolerance"
+    APPOINTMENT = "Appointment"
     CARE_PLAN = "CarePlan"
     CARE_TEAM = "CareTeam"
     CONDITION = "Condition"
+    CONSENT = "Consent"
+    COVERAGE = "Coverage"
     DEVICE = "Device"
     DIAGNOSTIC_REPORT = "DiagnosticReport"
     DOCUMENT_REFERENCE = "DocumentReference"
     ENCOUNTER = "Encounter"
+    FAMILY_MEMBER_HISTORY = "FamilyMemberHistory"
     GOAL = "Goal"
     IMMUNIZATION = "Immunization"
     LOCATION = "Location"
@@ -44,7 +48,12 @@ class ResourceType(str, Enum):
     PRACTITIONER = "Practitioner"
     PROCEDURE = "Procedure"
     PROVENANCE = "Provenance"
+    QUESTIONNAIRE_RESPONSE = "QuestionnaireResponse"
+    RELATED_PERSON = "RelatedPerson"
+    SCHEDULE = "Schedule"
     SERVICE_REQUEST = "ServiceRequest"
+    SLOT = "Slot"
+    SUBSCRIPTION = "Subscription"
 
 
 # Clinical note types with LOINC codes
@@ -1425,5 +1434,507 @@ def create_server() -> FastMCP:
 
         except FHIRError as e:
             return response_processor.create_error_response(e, connection_id)
+
+    # ==========================================================================
+    # Category 10: Validation Operations (1 tool)
+    # ==========================================================================
+
+    @mcp.tool()
+    async def fhir_validate(
+        connection_id: str,
+        resource: dict[str, Any],
+        profile: str | None = None,
+        mode: str = "local",
+    ) -> dict[str, Any]:
+        """
+        Validate a resource against FHIR specification and optional profile.
+
+        Args:
+            connection_id: Which FHIR server
+            resource: The FHIR resource to validate
+            profile: Optional profile URL to validate against
+            mode: Validation mode (local, server, both)
+
+        Returns:
+            OperationOutcome with validation results
+        """
+        start_time = time.time()
+        try:
+            all_errors: list[str] = []
+            all_warnings: list[str] = []
+
+            # Local validation
+            if mode in ("local", "both"):
+                validation_result = fhir_validator.validate(resource)
+                all_errors.extend(validation_result.errors)
+                all_warnings.extend(validation_result.warnings)
+
+            # Server-side validation
+            if mode in ("server", "both"):
+                resource_type = resource.get("resourceType")
+                if not resource_type:
+                    all_errors.append("resourceType is required for server validation")
+                else:
+                    params: dict[str, Any] = {}
+                    if profile:
+                        params["profile"] = profile
+
+                    try:
+                        result = await fhir_client.post(
+                            connection_id,
+                            f"{resource_type}/$validate",
+                            resource,
+                            params=params if params else None,
+                        )
+
+                        # Parse OperationOutcome
+                        if result.get("resourceType") == "OperationOutcome":
+                            for issue in result.get("issue", []):
+                                severity = issue.get("severity", "error")
+                                diagnostics = issue.get("diagnostics", "Unknown issue")
+                                if severity in ("error", "fatal"):
+                                    all_errors.append(diagnostics)
+                                elif severity == "warning":
+                                    all_warnings.append(diagnostics)
+
+                    except FHIRError as e:
+                        # Server might not support $validate
+                        all_warnings.append(f"Server validation failed: {e.message}")
+
+            # Build response
+            is_valid = len(all_errors) == 0
+            outcome: dict[str, Any] = {
+                "resourceType": "OperationOutcome",
+                "issue": [],
+            }
+
+            for error in all_errors:
+                outcome["issue"].append({
+                    "severity": "error",
+                    "code": "invalid",
+                    "diagnostics": error,
+                })
+
+            for warning in all_warnings:
+                outcome["issue"].append({
+                    "severity": "warning",
+                    "code": "informational",
+                    "diagnostics": warning,
+                })
+
+            if is_valid and not outcome["issue"]:
+                outcome["issue"].append({
+                    "severity": "information",
+                    "code": "informational",
+                    "diagnostics": "Resource is valid",
+                })
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data={
+                    "valid": is_valid,
+                    "error_count": len(all_errors),
+                    "warning_count": len(all_warnings),
+                    "operation_outcome": outcome,
+                },
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    # ==========================================================================
+    # Category 11: Terminology Operations (1 tool)
+    # ==========================================================================
+
+    @mcp.tool()
+    async def fhir_translate(
+        connection_id: str,
+        code: str,
+        system: str,
+        target_system: str,
+        concept_map_url: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Translate a code from one system to another.
+
+        Args:
+            connection_id: Which FHIR server
+            code: The code to translate
+            system: Source coding system URL
+            target_system: Target coding system URL
+            concept_map_url: Optional ConceptMap URL to use for translation
+
+        Returns:
+            Parameters resource with translation results
+        """
+        start_time = time.time()
+        try:
+            # Build $translate parameters
+            params: dict[str, Any] = {
+                "code": code,
+                "system": system,
+                "target": target_system,
+            }
+
+            if concept_map_url:
+                params["url"] = concept_map_url
+
+            # Call ConceptMap/$translate
+            result = await fhir_client.get(
+                connection_id,
+                "ConceptMap/$translate",
+                params=params,
+            )
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data=result,
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    # ==========================================================================
+    # Category 12: Subscription Operations (3 tools)
+    # ==========================================================================
+
+    @mcp.tool()
+    async def fhir_subscription_create(
+        connection_id: str,
+        criteria: str,
+        channel_type: str,
+        endpoint: str,
+        payload_type: str = "application/fhir+json",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a subscription for resource changes.
+
+        Args:
+            connection_id: Which FHIR server
+            criteria: Search criteria (e.g., "Observation?patient=123")
+            channel_type: Channel type (rest-hook, websocket, email, message)
+            endpoint: Destination URL for notifications
+            payload_type: Content type for payload (default: application/fhir+json)
+            reason: Optional reason for the subscription
+
+        Returns:
+            Created Subscription resource
+        """
+        start_time = time.time()
+        try:
+            from fhir_r4_mcp.subscriptions import SubscriptionConfig, subscription_manager
+
+            config = SubscriptionConfig(
+                criteria=criteria,
+                channel_type=channel_type,
+                endpoint=endpoint,
+                payload_type=payload_type,
+                reason=reason,
+            )
+
+            result = await subscription_manager.create_subscription(connection_id, config)
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data=result,
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+                http_status=201,
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    @mcp.tool()
+    async def fhir_subscription_list(
+        connection_id: str,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        List active subscriptions on a FHIR server.
+
+        Args:
+            connection_id: Which FHIR server
+            status: Optional status filter (requested, active, error, off)
+
+        Returns:
+            Bundle of Subscription resources
+        """
+        start_time = time.time()
+        try:
+            from fhir_r4_mcp.subscriptions import subscription_manager
+
+            result = await subscription_manager.list_subscriptions(connection_id, status)
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.parse_search_result(result, connection_id, duration_ms)
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    @mcp.tool()
+    async def fhir_subscription_delete(
+        connection_id: str,
+        subscription_id: str,
+    ) -> dict[str, Any]:
+        """
+        Delete a subscription.
+
+        Args:
+            connection_id: Which FHIR server
+            subscription_id: ID of the subscription to delete
+
+        Returns:
+            Deletion confirmation
+        """
+        start_time = time.time()
+        try:
+            from fhir_r4_mcp.subscriptions import subscription_manager
+
+            await subscription_manager.delete_subscription(connection_id, subscription_id)
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data={
+                    "deleted": True,
+                    "subscription_id": subscription_id,
+                },
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+                http_status=204,
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    # ==========================================================================
+    # Category 13: CDS Hooks Operations (2 tools)
+    # ==========================================================================
+
+    @mcp.tool()
+    async def cds_services_list(
+        connection_id: str,
+        cds_url: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get available CDS Hooks services from the server.
+
+        Args:
+            connection_id: Which FHIR server
+            cds_url: Optional CDS service URL (derived from FHIR URL if not provided)
+
+        Returns:
+            List of available CDS services
+        """
+        start_time = time.time()
+        try:
+            from fhir_r4_mcp.cds import cds_service
+
+            discovery = await cds_service.discover_services(connection_id, cds_url)
+
+            services = [s.to_dict() for s in discovery.services]
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data={
+                    "services": services,
+                    "count": len(services),
+                },
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    @mcp.tool()
+    async def cds_hook_invoke(
+        connection_id: str,
+        hook: str,
+        context: dict[str, Any],
+        prefetch: dict[str, Any] | None = None,
+        cds_url: str | None = None,
+        service_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Invoke a CDS Hook and get recommendations.
+
+        Args:
+            connection_id: Which FHIR server
+            hook: Hook type to invoke (patient-view, medication-prescribe, order-sign, etc.)
+            context: Hook-specific context (userId, patientId, encounterId, etc.)
+            prefetch: Pre-fetched FHIR resources
+            cds_url: Optional CDS service URL
+            service_id: Optional specific service ID to invoke
+
+        Returns:
+            CDS Hooks response with cards (recommendations)
+        """
+        start_time = time.time()
+        try:
+            from fhir_r4_mcp.cds import cds_service
+
+            response = await cds_service.invoke_hook(
+                connection_id=connection_id,
+                hook=hook,
+                context=context,
+                prefetch=prefetch,
+                cds_url=cds_url,
+                service_id=service_id,
+            )
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data=response.to_dict(),
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    # ==========================================================================
+    # Category 14: Patient Matching (1 tool)
+    # ==========================================================================
+
+    @mcp.tool()
+    async def fhir_match(
+        connection_id: str,
+        resource: dict[str, Any],
+        only_certain_matches: bool = False,
+        count: int = 5,
+    ) -> dict[str, Any]:
+        """
+        Find patients matching the provided demographics using $match operation.
+
+        Args:
+            connection_id: Which FHIR server
+            resource: Patient resource with demographics to match
+            only_certain_matches: Only return high-confidence matches
+            count: Maximum number of matches to return
+
+        Returns:
+            Bundle of potential matches with match scores
+        """
+        start_time = time.time()
+        try:
+            # Ensure it's a Patient resource
+            if resource.get("resourceType") != "Patient":
+                resource["resourceType"] = "Patient"
+
+            # Build parameters
+            params_resource: dict[str, Any] = {
+                "resourceType": "Parameters",
+                "parameter": [
+                    {
+                        "name": "resource",
+                        "resource": resource,
+                    },
+                    {
+                        "name": "count",
+                        "valueInteger": count,
+                    },
+                ],
+            }
+
+            if only_certain_matches:
+                params_resource["parameter"].append({
+                    "name": "onlyCertainMatches",
+                    "valueBoolean": True,
+                })
+
+            result = await fhir_client.post(
+                connection_id,
+                "Patient/$match",
+                params_resource,
+            )
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data=result,
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    # ==========================================================================
+    # Category 15: Cache Operations (2 tools)
+    # ==========================================================================
+
+    @mcp.tool()
+    async def fhir_cache_stats(
+        connection_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get cache statistics.
+
+        Args:
+            connection_id: Optional connection ID for context
+
+        Returns:
+            Cache statistics including hit rate, size, etc.
+        """
+        start_time = time.time()
+        try:
+            from fhir_r4_mcp.cache import fhir_cache
+
+            stats = await fhir_cache.stats()
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data=stats,
+                connection_id=connection_id or "system",
+                duration_ms=duration_ms,
+            )
+
+        except Exception as e:
+            return response_processor.create_error_response(e, connection_id or "system")
+
+    @mcp.tool()
+    async def fhir_cache_clear(
+        connection_id: str | None = None,
+        pattern: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Clear cache entries.
+
+        Args:
+            connection_id: Optional connection ID to clear specific connection cache
+            pattern: Optional pattern to match keys (supports * wildcard)
+
+        Returns:
+            Number of entries cleared
+        """
+        start_time = time.time()
+        try:
+            from fhir_r4_mcp.cache import fhir_cache
+
+            if pattern:
+                count = await fhir_cache.invalidate(pattern)
+            elif connection_id:
+                count = await fhir_cache.invalidate(f"{connection_id}:*")
+            else:
+                await fhir_cache.clear()
+                count = -1  # Indicates full clear
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data={
+                    "cleared": True,
+                    "entries_removed": count if count >= 0 else "all",
+                },
+                connection_id=connection_id or "system",
+                duration_ms=duration_ms,
+            )
+
+        except Exception as e:
+            return response_processor.create_error_response(e, connection_id or "system")
 
     return mcp

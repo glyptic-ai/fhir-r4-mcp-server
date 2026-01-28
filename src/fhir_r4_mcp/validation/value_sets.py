@@ -241,6 +241,224 @@ VALUE_SETS: dict[str, list[str]] = {
         "additional",
         "empty",
     ],
+    # Coverage Status (required)
+    # https://hl7.org/fhir/R4/valueset-fm-status.html
+    "coverage-status": [
+        "active",
+        "cancelled",
+        "draft",
+        "entered-in-error",
+    ],
+    # Related Person Relationship
+    # https://hl7.org/fhir/R4/valueset-relatedperson-relationshiptype.html
+    "relatedperson-relationship": [
+        "FAMMEMB",  # Family Member
+        "CHILD",  # Child
+        "CHLDADOPT",  # Adopted child
+        "CHLDFOST",  # Foster child
+        "DAUC",  # Daughter
+        "SONC",  # Son
+        "STPCHLD",  # Step child
+        "NCHILD",  # Natural child
+        "PRN",  # Parent
+        "ADOPTP",  # Adoptive parent
+        "FTH",  # Father
+        "MTH",  # Mother
+        "NPRN",  # Natural parent
+        "STPPRN",  # Step parent
+        "SIB",  # Sibling
+        "BRO",  # Brother
+        "SIS",  # Sister
+        "STPSIB",  # Step sibling
+        "HSIB",  # Half-sibling
+        "SIGOTHR",  # Significant other
+        "SPS",  # Spouse
+        "DOMPART",  # Domestic partner
+        "FRND",  # Friend
+        "NBOR",  # Neighbor
+        "ROOM",  # Roommate
+        "GUARD",  # Guardian
+        "NOK",  # Next of Kin
+        "POWATT",  # Power of Attorney
+        "DPOWATT",  # Durable Power of Attorney
+        "EMGCON",  # Emergency Contact
+    ],
+    # Appointment Status (required)
+    # https://hl7.org/fhir/R4/valueset-appointmentstatus.html
+    "appointment-status": [
+        "proposed",
+        "pending",
+        "booked",
+        "arrived",
+        "fulfilled",
+        "cancelled",
+        "noshow",
+        "entered-in-error",
+        "checked-in",
+        "waitlist",
+    ],
+    # Participant Required
+    # https://hl7.org/fhir/R4/valueset-participantrequired.html
+    "participant-required": [
+        "required",
+        "optional",
+        "information-only",
+    ],
+    # Participation Status
+    # https://hl7.org/fhir/R4/valueset-participationstatus.html
+    "participation-status": [
+        "accepted",
+        "declined",
+        "tentative",
+        "needs-action",
+    ],
+    # Slot Status
+    # https://hl7.org/fhir/R4/valueset-slotstatus.html
+    "slot-status": [
+        "busy",
+        "free",
+        "busy-unavailable",
+        "busy-tentative",
+        "entered-in-error",
+    ],
+    # Consent State
+    # https://hl7.org/fhir/R4/valueset-consent-state-codes.html
+    "consent-state": [
+        "draft",
+        "proposed",
+        "active",
+        "rejected",
+        "inactive",
+        "entered-in-error",
+    ],
+    # Consent Scope
+    # https://hl7.org/fhir/R4/valueset-consent-scope.html
+    "consent-scope": [
+        "adr",  # Advanced Care Directive
+        "research",  # Research
+        "patient-privacy",  # Privacy Consent
+        "treatment",  # Treatment
+    ],
+    # Consent Category
+    # https://hl7.org/fhir/R4/valueset-consent-category.html
+    "consent-category": [
+        "acd",  # Advance Directive
+        "dnr",  # Do Not Resuscitate
+        "emrgonly",  # Emergency Only
+        "hcd",  # Health Care Directive
+        "npp",  # Notice of Privacy Practices
+        "polst",  # POLST
+        "research",  # Research Information Access
+        "rsdid",  # De-identified Information Access
+        "rsreid",  # Re-identifiable Information Access
+    ],
+    # QuestionnaireResponse Status
+    # https://hl7.org/fhir/R4/valueset-questionnaire-answers-status.html
+    "questionnaire-answers-status": [
+        "in-progress",
+        "completed",
+        "amended",
+        "entered-in-error",
+        "stopped",
+    ],
+    # FamilyMemberHistory Status
+    # https://hl7.org/fhir/R4/valueset-history-status.html
+    "history-status": [
+        "partial",
+        "completed",
+        "entered-in-error",
+        "health-unknown",
+    ],
+    # Family Member Relationship (uses v3 RoleCode)
+    # https://hl7.org/fhir/R4/v3/FamilyMember/vs.html
+    "family-member-relationship": [
+        "FAMMEMB",  # Family Member
+        "CHILD",  # Child
+        "CHLDADOPT",  # Adopted child
+        "CHLDFOST",  # Foster child
+        "CHLDINLAW",  # Child in-law
+        "DAUC",  # Daughter
+        "DAU",  # Natural daughter
+        "DAUADOPT",  # Adopted daughter
+        "DAUFOST",  # Foster daughter
+        "STPDAU",  # Stepdaughter
+        "DAUIN",  # Daughter in-law
+        "SONC",  # Son
+        "SON",  # Natural son
+        "SONADOPT",  # Adopted son
+        "SONFOST",  # Foster son
+        "STPSON",  # Stepson
+        "SONIN",  # Son in-law
+        "STPCHLD",  # Step child
+        "NCHILD",  # Natural child
+        "PRN",  # Parent
+        "ADOPTP",  # Adoptive parent
+        "FTH",  # Father
+        "NFTH",  # Natural father
+        "STPFTH",  # Stepfather
+        "FTHINLAW",  # Father-in-law
+        "MTH",  # Mother
+        "NMTH",  # Natural mother
+        "STPMTH",  # Stepmother
+        "MTHINLAW",  # Mother-in-law
+        "NPRN",  # Natural parent
+        "STPPRN",  # Step parent
+        "SIB",  # Sibling
+        "BRO",  # Brother
+        "HBRO",  # Half-brother
+        "NBRO",  # Natural brother
+        "TWINBRO",  # Twin brother
+        "FTWINBRO",  # Fraternal twin brother
+        "ITWINBRO",  # Identical twin brother
+        "STPBRO",  # Stepbrother
+        "BROINLAW",  # Brother-in-law
+        "SIS",  # Sister
+        "HSIS",  # Half-sister
+        "NSIS",  # Natural sister
+        "TWINSIS",  # Twin sister
+        "FTWINSIS",  # Fraternal twin sister
+        "ITWINSIS",  # Identical twin sister
+        "STPSIS",  # Stepsister
+        "SISINLAW",  # Sister-in-law
+        "STPSIB",  # Step sibling
+        "HSIB",  # Half-sibling
+        "NSIB",  # Natural sibling
+        "GRPRN",  # Grandparent
+        "GRMTH",  # Grandmother
+        "GRFTH",  # Grandfather
+        "GRNDCHILD",  # Grandchild
+        "GRNDDAU",  # Granddaughter
+        "GRNDSON",  # Grandson
+        "AUNT",  # Aunt
+        "UNCLE",  # Uncle
+        "COUSN",  # Cousin
+        "NIENEPH",  # Niece/Nephew
+        "NIECE",  # Niece
+        "NEPHEW",  # Nephew
+        "EXT",  # Extended family member
+        "SIGOTHR",  # Significant other
+        "SPS",  # Spouse
+        "HUSB",  # Husband
+        "WIFE",  # Wife
+        "DOMPART",  # Domestic partner
+    ],
+    # Subscription Status
+    # https://hl7.org/fhir/R4/valueset-subscription-status.html
+    "subscription-status": [
+        "requested",
+        "active",
+        "error",
+        "off",
+    ],
+    # Subscription Channel Type
+    # https://hl7.org/fhir/R4/valueset-subscription-channel-type.html
+    "subscription-channel-type": [
+        "rest-hook",
+        "websocket",
+        "email",
+        "sms",
+        "message",
+    ],
 }
 
 # Mapping from resource type + field to value set name
@@ -295,6 +513,30 @@ FIELD_VALUE_SET_MAP: dict[str, dict[str, str]] = {
     "ServiceRequest": {
         "status": "servicerequest-status",
         "intent": "servicerequest-intent",
+    },
+    "Coverage": {
+        "status": "coverage-status",
+    },
+    "RelatedPerson": {
+        "gender": "administrative-gender",
+    },
+    "Appointment": {
+        "status": "appointment-status",
+    },
+    "Slot": {
+        "status": "slot-status",
+    },
+    "Consent": {
+        "status": "consent-state",
+    },
+    "QuestionnaireResponse": {
+        "status": "questionnaire-answers-status",
+    },
+    "FamilyMemberHistory": {
+        "status": "history-status",
+    },
+    "Subscription": {
+        "status": "subscription-status",
     },
 }
 

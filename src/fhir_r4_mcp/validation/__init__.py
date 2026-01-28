@@ -7,7 +7,10 @@ from fhir_r4_mcp.validation.coding_systems import (
 )
 from fhir_r4_mcp.validation.search_params import (
     SEARCH_PARAMS,
+    ChainedParam,
+    ChainedSearchParser,
     SearchParamValidator,
+    chained_search_parser,
     search_param_validator,
 )
 from fhir_r4_mcp.validation.validators import (
@@ -38,4 +41,8 @@ __all__ = [
     "SEARCH_PARAMS",
     "SearchParamValidator",
     "search_param_validator",
+    # Chained Search
+    "ChainedParam",
+    "ChainedSearchParser",
+    "chained_search_parser",
 ]

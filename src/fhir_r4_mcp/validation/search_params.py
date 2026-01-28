@@ -6,9 +6,20 @@ and provides validation for search queries.
 See: https://hl7.org/fhir/R4/searchparameter-registry.html
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from fhir_r4_mcp.utils.errors import FHIRValidationError
+
+
+@dataclass
+class ChainedParam:
+    """Represents a parsed chained search parameter."""
+
+    base_param: str  # e.g., "subject"
+    target_type: str | None  # e.g., "Patient" (optional type discriminator)
+    chained_param: str  # e.g., "name"
+    full_chain: str  # Original string e.g., "subject:Patient.name"
 
 # Common search parameters available on all resources
 COMMON_SEARCH_PARAMS: list[str] = [
@@ -443,6 +454,126 @@ SEARCH_PARAMS: dict[str, list[str]] = {
         "target",
         "when",
     ],
+    "Coverage": [
+        "beneficiary",
+        "class-type",
+        "class-value",
+        "dependent",
+        "identifier",
+        "patient",
+        "payor",
+        "policy-holder",
+        "status",
+        "subscriber",
+        "type",
+    ],
+    "RelatedPerson": [
+        "active",
+        "address",
+        "address-city",
+        "address-country",
+        "address-postalcode",
+        "address-state",
+        "address-use",
+        "birthdate",
+        "email",
+        "gender",
+        "identifier",
+        "name",
+        "patient",
+        "phone",
+        "phonetic",
+        "relationship",
+        "telecom",
+    ],
+    "Appointment": [
+        "actor",
+        "appointment-type",
+        "based-on",
+        "date",
+        "identifier",
+        "location",
+        "part-status",
+        "patient",
+        "practitioner",
+        "reason-code",
+        "reason-reference",
+        "service-category",
+        "service-type",
+        "slot",
+        "specialty",
+        "status",
+        "supporting-info",
+    ],
+    "Schedule": [
+        "active",
+        "actor",
+        "date",
+        "identifier",
+        "service-category",
+        "service-type",
+        "specialty",
+    ],
+    "Slot": [
+        "appointment-type",
+        "identifier",
+        "schedule",
+        "service-category",
+        "service-type",
+        "specialty",
+        "start",
+        "status",
+    ],
+    "Consent": [
+        "action",
+        "actor",
+        "category",
+        "consentor",
+        "data",
+        "date",
+        "identifier",
+        "organization",
+        "patient",
+        "period",
+        "purpose",
+        "scope",
+        "security-label",
+        "source-reference",
+        "status",
+    ],
+    "QuestionnaireResponse": [
+        "author",
+        "authored",
+        "based-on",
+        "encounter",
+        "identifier",
+        "item-subject",
+        "part-of",
+        "patient",
+        "questionnaire",
+        "source",
+        "status",
+        "subject",
+    ],
+    "FamilyMemberHistory": [
+        "code",
+        "date",
+        "identifier",
+        "instantiates-canonical",
+        "instantiates-uri",
+        "patient",
+        "relationship",
+        "sex",
+        "status",
+    ],
+    "Subscription": [
+        "contact",
+        "criteria",
+        "payload",
+        "status",
+        "type",
+        "url",
+    ],
 }
 
 # Search parameter modifiers
@@ -595,5 +726,191 @@ class SearchParamValidator:
         return "eq", value
 
 
+# Reference parameter to target types mapping
+# Maps reference parameters to the resource types they can target
+REFERENCE_TARGET_TYPES: dict[str, dict[str, list[str]]] = {
+    "Observation": {
+        "subject": ["Patient", "Group", "Device", "Location"],
+        "patient": ["Patient"],
+        "performer": ["Practitioner", "PractitionerRole", "Organization", "CareTeam", "Patient", "RelatedPerson"],
+        "encounter": ["Encounter"],
+    },
+    "Condition": {
+        "subject": ["Patient", "Group"],
+        "patient": ["Patient"],
+        "encounter": ["Encounter"],
+        "asserter": ["Practitioner", "PractitionerRole", "Patient", "RelatedPerson"],
+    },
+    "MedicationRequest": {
+        "subject": ["Patient", "Group"],
+        "patient": ["Patient"],
+        "encounter": ["Encounter"],
+        "requester": ["Practitioner", "PractitionerRole", "Organization", "Patient", "RelatedPerson", "Device"],
+    },
+    "Encounter": {
+        "subject": ["Patient", "Group"],
+        "patient": ["Patient"],
+        "practitioner": ["Practitioner"],
+        "participant": ["Practitioner", "PractitionerRole", "RelatedPerson"],
+    },
+    "DiagnosticReport": {
+        "subject": ["Patient", "Group", "Device", "Location"],
+        "patient": ["Patient"],
+        "encounter": ["Encounter"],
+        "performer": ["Practitioner", "PractitionerRole", "Organization", "CareTeam"],
+    },
+    "Procedure": {
+        "subject": ["Patient", "Group"],
+        "patient": ["Patient"],
+        "encounter": ["Encounter"],
+        "performer": ["Practitioner", "PractitionerRole", "Organization", "Patient", "RelatedPerson", "Device"],
+    },
+    "CarePlan": {
+        "subject": ["Patient", "Group"],
+        "patient": ["Patient"],
+        "encounter": ["Encounter"],
+        "performer": ["Practitioner", "PractitionerRole", "Organization", "CareTeam", "Patient", "RelatedPerson", "Device"],
+    },
+    "DocumentReference": {
+        "subject": ["Patient", "Practitioner", "Group", "Device"],
+        "patient": ["Patient"],
+        "encounter": ["Encounter"],
+        "author": ["Practitioner", "PractitionerRole", "Organization", "Device", "Patient", "RelatedPerson"],
+    },
+}
+
+
+class ChainedSearchParser:
+    """Parse and validate chained search parameters.
+
+    Chained search allows querying across resource references, like:
+    - Observation?subject:Patient.name=smith
+    - MedicationRequest?subject:Patient.birthdate=1990-01-01
+    - Condition?subject:Patient.identifier=12345
+
+    See: https://hl7.org/fhir/R4/search.html#chaining
+    """
+
+    def __init__(
+        self,
+        search_params: dict[str, list[str]] | None = None,
+        reference_targets: dict[str, dict[str, list[str]]] | None = None,
+    ) -> None:
+        """Initialize the parser."""
+        self._search_params = search_params or SEARCH_PARAMS
+        self._reference_targets = reference_targets or REFERENCE_TARGET_TYPES
+
+    def parse(self, param: str) -> ChainedParam | None:
+        """
+        Parse a chained search parameter.
+
+        Args:
+            param: Parameter string like "subject:Patient.name" or "patient.birthdate"
+
+        Returns:
+            ChainedParam if valid chain, None if not a chained parameter
+        """
+        # Check for explicit type discriminator (e.g., subject:Patient.name)
+        if ":" in param and "." in param:
+            colon_idx = param.index(":")
+            dot_idx = param.index(".", colon_idx)
+
+            base_param = param[:colon_idx]
+            target_type = param[colon_idx + 1 : dot_idx]
+            chained_param = param[dot_idx + 1 :]
+
+            return ChainedParam(
+                base_param=base_param,
+                target_type=target_type,
+                chained_param=chained_param,
+                full_chain=param,
+            )
+
+        # Check for simple chain without type (e.g., patient.name)
+        if "." in param and ":" not in param:
+            dot_idx = param.index(".")
+            base_param = param[:dot_idx]
+            chained_param = param[dot_idx + 1 :]
+
+            return ChainedParam(
+                base_param=base_param,
+                target_type=None,
+                chained_param=chained_param,
+                full_chain=param,
+            )
+
+        return None
+
+    def validate_chain(
+        self,
+        resource_type: str,
+        chain: ChainedParam,
+        raise_on_error: bool = False,
+    ) -> list[str]:
+        """
+        Validate a chained search parameter for a resource type.
+
+        Args:
+            resource_type: The base resource type being searched
+            chain: Parsed chained parameter
+            raise_on_error: If True, raise exception on first error
+
+        Returns:
+            List of validation error messages
+        """
+        errors: list[str] = []
+
+        # Check if base parameter exists for the resource type
+        resource_params = self._search_params.get(resource_type, [])
+        if chain.base_param not in resource_params:
+            error = f"Invalid base parameter '{chain.base_param}' for {resource_type}"
+            errors.append(error)
+            if raise_on_error:
+                raise FHIRValidationError(message=error, field=chain.full_chain)
+
+        # Determine target types for the reference parameter
+        resource_targets = self._reference_targets.get(resource_type, {})
+        allowed_targets = resource_targets.get(chain.base_param, [])
+
+        # If explicit type provided, validate it's allowed
+        if chain.target_type:
+            if allowed_targets and chain.target_type not in allowed_targets:
+                error = (
+                    f"Target type '{chain.target_type}' not valid for "
+                    f"{resource_type}.{chain.base_param}. "
+                    f"Allowed: {allowed_targets}"
+                )
+                errors.append(error)
+                if raise_on_error:
+                    raise FHIRValidationError(message=error, field=chain.full_chain)
+
+            # Validate chained parameter exists on target type
+            target_params = self._search_params.get(chain.target_type, [])
+            # Strip any modifier from chained param
+            base_chained = chain.chained_param.split(":")[0]
+            if target_params and base_chained not in target_params:
+                error = (
+                    f"Invalid chained parameter '{chain.chained_param}' "
+                    f"for target type {chain.target_type}"
+                )
+                errors.append(error)
+                if raise_on_error:
+                    raise FHIRValidationError(message=error, field=chain.full_chain)
+
+        return errors
+
+    def get_target_types(
+        self,
+        resource_type: str,
+        reference_param: str,
+    ) -> list[str]:
+        """Get allowed target types for a reference parameter."""
+        resource_targets = self._reference_targets.get(resource_type, {})
+        return resource_targets.get(reference_param, [])
+
+
 # Global validator instance
 search_param_validator = SearchParamValidator()
+
+# Global chained search parser instance
+chained_search_parser = ChainedSearchParser()
