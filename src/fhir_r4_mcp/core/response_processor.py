@@ -23,6 +23,7 @@ class ResponseProcessor:
         connection_id: str,
         duration_ms: int | None = None,
         pagination: dict[str, Any] | None = None,
+        http_status: int = 200,
     ) -> dict[str, Any]:
         """
         Create a standardized success response.
@@ -32,6 +33,7 @@ class ResponseProcessor:
             connection_id: Connection identifier.
             duration_ms: Request duration in milliseconds.
             pagination: Pagination metadata.
+            http_status: HTTP status code (200 for read/search, 201 for create, 204 for delete).
 
         Returns:
             Standardized response dictionary.
@@ -43,6 +45,7 @@ class ResponseProcessor:
                 "connection_id": connection_id,
                 "request_id": f"req_{uuid.uuid4().hex[:12]}",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
+                "http_status": http_status,
             },
         }
 
@@ -58,18 +61,20 @@ class ResponseProcessor:
     def create_error_response(
         error: Exception,
         connection_id: str | None = None,
+        include_operation_outcome: bool = True,
     ) -> dict[str, Any]:
         """
-        Create a standardized error response.
+        Create a standardized error response with FHIR OperationOutcome.
 
         Args:
             error: Exception that occurred.
             connection_id: Connection identifier (if available).
+            include_operation_outcome: Whether to include OperationOutcome resource.
 
         Returns:
-            Standardized error response dictionary.
+            Standardized error response dictionary with OperationOutcome.
         """
-        from fhir_r4_mcp.utils.errors import FHIRError
+        from fhir_r4_mcp.utils.errors import FHIRError, IssueType, IssueSeverity
 
         response: dict[str, Any] = {
             "success": False,
@@ -84,12 +89,27 @@ class ResponseProcessor:
 
         if isinstance(error, FHIRError):
             response["error"] = error.to_dict()
+            response["metadata"]["http_status"] = error.http_status
+            if include_operation_outcome:
+                response["operation_outcome"] = error.to_operation_outcome()
         else:
             response["error"] = {
                 "code": "FHIR_ERROR",
                 "message": str(error),
                 "recoverable": False,
             }
+            response["metadata"]["http_status"] = 500
+            if include_operation_outcome:
+                response["operation_outcome"] = {
+                    "resourceType": "OperationOutcome",
+                    "issue": [
+                        {
+                            "severity": IssueSeverity.ERROR,
+                            "code": IssueType.EXCEPTION,
+                            "diagnostics": str(error),
+                        }
+                    ],
+                }
 
         return response
 

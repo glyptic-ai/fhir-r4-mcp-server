@@ -13,8 +13,9 @@ from fhir_r4_mcp.core.connection_manager import (
     connection_manager,
 )
 from fhir_r4_mcp.core.response_processor import response_processor
-from fhir_r4_mcp.utils.errors import FHIRError
+from fhir_r4_mcp.utils.errors import FHIRError, FHIRValidationError
 from fhir_r4_mcp.utils.logging import get_logger
+from fhir_r4_mcp.validation import fhir_validator, search_param_validator
 
 logger = get_logger(__name__)
 
@@ -388,6 +389,159 @@ def create_server() -> FastMCP:
             result = await fhir_client.read(connection_id, resource_type, resource_id)
             duration_ms = int((time.time() - start_time) * 1000)
             return response_processor.parse_resource(result, connection_id, duration_ms)
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    @mcp.tool()
+    async def fhir_resource_create(
+        connection_id: str,
+        resource_type: str,
+        resource: dict[str, Any],
+        validate: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Create a new FHIR resource.
+
+        Args:
+            connection_id: Which FHIR server
+            resource_type: FHIR resource type (e.g., Patient, Observation)
+            resource: The FHIR resource to create (must include resourceType)
+            validate: Whether to validate the resource before creation (default: True)
+
+        Returns:
+            Created resource with server-assigned ID and metadata
+        """
+        start_time = time.time()
+        try:
+            # Ensure resourceType is set correctly
+            if "resourceType" not in resource:
+                resource["resourceType"] = resource_type
+            elif resource["resourceType"] != resource_type:
+                raise FHIRValidationError(
+                    message=f"Resource type mismatch: expected {resource_type}, got {resource['resourceType']}",
+                    field="resourceType",
+                )
+
+            # Validate the resource if requested
+            if validate:
+                validation_result = fhir_validator.validate(resource, raise_on_error=True)
+                if not validation_result.valid:
+                    raise FHIRValidationError(
+                        message="Resource validation failed",
+                        details={"errors": validation_result.errors},
+                    )
+
+            result = await fhir_client.post(connection_id, resource_type, resource)
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data=result,
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+                http_status=201,  # Created
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    @mcp.tool()
+    async def fhir_resource_update(
+        connection_id: str,
+        resource_type: str,
+        resource_id: str,
+        resource: dict[str, Any],
+        validate: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Update an existing FHIR resource.
+
+        Args:
+            connection_id: Which FHIR server
+            resource_type: FHIR resource type
+            resource_id: ID of the resource to update
+            resource: The updated FHIR resource (must include resourceType and id)
+            validate: Whether to validate the resource before update (default: True)
+
+        Returns:
+            Updated resource with new version metadata
+        """
+        start_time = time.time()
+        try:
+            # Ensure resourceType is set correctly
+            if "resourceType" not in resource:
+                resource["resourceType"] = resource_type
+            elif resource["resourceType"] != resource_type:
+                raise FHIRValidationError(
+                    message=f"Resource type mismatch: expected {resource_type}, got {resource['resourceType']}",
+                    field="resourceType",
+                )
+
+            # Ensure id is set correctly
+            if "id" not in resource:
+                resource["id"] = resource_id
+            elif resource["id"] != resource_id:
+                raise FHIRValidationError(
+                    message=f"Resource ID mismatch: expected {resource_id}, got {resource['id']}",
+                    field="id",
+                )
+
+            # Validate the resource if requested
+            if validate:
+                validation_result = fhir_validator.validate(resource, raise_on_error=True)
+                if not validation_result.valid:
+                    raise FHIRValidationError(
+                        message="Resource validation failed",
+                        details={"errors": validation_result.errors},
+                    )
+
+            result = await fhir_client.put(
+                connection_id, f"{resource_type}/{resource_id}", resource
+            )
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data=result,
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+                http_status=200,  # OK
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    @mcp.tool()
+    async def fhir_resource_delete(
+        connection_id: str,
+        resource_type: str,
+        resource_id: str,
+    ) -> dict[str, Any]:
+        """
+        Delete a FHIR resource.
+
+        Args:
+            connection_id: Which FHIR server
+            resource_type: FHIR resource type
+            resource_id: ID of the resource to delete
+
+        Returns:
+            Deletion confirmation
+        """
+        start_time = time.time()
+        try:
+            await fhir_client.delete(connection_id, f"{resource_type}/{resource_id}")
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data={
+                    "deleted": True,
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                },
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+                http_status=204,  # No Content
+            )
 
         except FHIRError as e:
             return response_processor.create_error_response(e, connection_id)
@@ -1091,6 +1245,183 @@ def create_server() -> FastMCP:
                 connection_id=connection_id,
                 duration_ms=duration_ms,
             )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    # ==========================================================================
+    # Category 8: Transaction & Batch Operations (1 tool)
+    # ==========================================================================
+
+    @mcp.tool()
+    async def fhir_transaction(
+        connection_id: str,
+        entries: list[dict[str, Any]],
+        bundle_type: str = "transaction",
+    ) -> dict[str, Any]:
+        """
+        Execute a FHIR transaction or batch bundle.
+
+        A transaction bundle processes all entries atomically - if one fails, all fail.
+        A batch bundle processes entries independently - failures don't affect others.
+
+        Args:
+            connection_id: Which FHIR server
+            entries: List of Bundle entry objects, each containing:
+                - resource: The FHIR resource
+                - request: Object with method (GET/POST/PUT/DELETE) and url
+            bundle_type: "transaction" (atomic) or "batch" (independent)
+
+        Returns:
+            FHIR Bundle with response entries for each request
+
+        Example entry:
+            {
+                "resource": {"resourceType": "Patient", "name": [{"family": "Smith"}]},
+                "request": {"method": "POST", "url": "Patient"}
+            }
+        """
+        start_time = time.time()
+        try:
+            if bundle_type not in ("transaction", "batch"):
+                raise FHIRValidationError(
+                    message=f"Invalid bundle type: {bundle_type}",
+                    field="bundle_type",
+                    details={"allowed": ["transaction", "batch"]},
+                )
+
+            # Build the Bundle resource
+            bundle: dict[str, Any] = {
+                "resourceType": "Bundle",
+                "type": bundle_type,
+                "entry": [],
+            }
+
+            # Validate and add entries
+            for i, entry in enumerate(entries):
+                request = entry.get("request", {})
+                if not request.get("method") or not request.get("url"):
+                    raise FHIRValidationError(
+                        message=f"Entry {i}: request.method and request.url are required",
+                        field=f"entries[{i}].request",
+                    )
+
+                bundle_entry: dict[str, Any] = {
+                    "request": {
+                        "method": request["method"],
+                        "url": request["url"],
+                    }
+                }
+
+                # Add resource for POST/PUT
+                if request["method"] in ("POST", "PUT"):
+                    resource = entry.get("resource")
+                    if not resource:
+                        raise FHIRValidationError(
+                            message=f"Entry {i}: resource is required for {request['method']}",
+                            field=f"entries[{i}].resource",
+                        )
+                    bundle_entry["resource"] = resource
+
+                    # Validate the resource
+                    validation_result = fhir_validator.validate(resource)
+                    if not validation_result.valid:
+                        raise FHIRValidationError(
+                            message=f"Entry {i}: resource validation failed",
+                            details={"errors": validation_result.errors},
+                        )
+
+                # Add fullUrl if provided
+                if "fullUrl" in entry:
+                    bundle_entry["fullUrl"] = entry["fullUrl"]
+
+                bundle["entry"].append(bundle_entry)
+
+            # Execute the transaction/batch
+            result = await fhir_client.post(connection_id, "", bundle)
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.create_success_response(
+                data=result,
+                connection_id=connection_id,
+                duration_ms=duration_ms,
+                http_status=200,
+            )
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    # ==========================================================================
+    # Category 9: History & Versioning (2 tools)
+    # ==========================================================================
+
+    @mcp.tool()
+    async def fhir_resource_history(
+        connection_id: str,
+        resource_type: str,
+        resource_id: str,
+        _count: int = 100,
+        _since: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get version history of a specific resource.
+
+        Args:
+            connection_id: Which FHIR server
+            resource_type: FHIR resource type
+            resource_id: Resource ID
+            _count: Maximum number of versions to return
+            _since: Only versions since this timestamp (ISO datetime)
+
+        Returns:
+            FHIR Bundle containing historical versions of the resource
+        """
+        start_time = time.time()
+        try:
+            params: dict[str, Any] = {"_count": _count}
+            if _since:
+                params["_since"] = _since
+
+            result = await fhir_client.get(
+                connection_id,
+                f"{resource_type}/{resource_id}/_history",
+                params=params,
+            )
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.parse_search_result(result, connection_id, duration_ms)
+
+        except FHIRError as e:
+            return response_processor.create_error_response(e, connection_id)
+
+    @mcp.tool()
+    async def fhir_resource_vread(
+        connection_id: str,
+        resource_type: str,
+        resource_id: str,
+        version_id: str,
+    ) -> dict[str, Any]:
+        """
+        Read a specific version of a resource (vread operation).
+
+        Args:
+            connection_id: Which FHIR server
+            resource_type: FHIR resource type
+            resource_id: Resource ID
+            version_id: Version ID to retrieve
+
+        Returns:
+            The specific version of the FHIR resource
+        """
+        start_time = time.time()
+        try:
+            result = await fhir_client.get(
+                connection_id,
+                f"{resource_type}/{resource_id}/_history/{version_id}",
+            )
+
+            duration_ms = int((time.time() - start_time) * 1000)
+            return response_processor.parse_resource(result, connection_id, duration_ms)
 
         except FHIRError as e:
             return response_processor.create_error_response(e, connection_id)
